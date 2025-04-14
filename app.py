@@ -15,8 +15,8 @@ if check_files_button and (not reference_file_upload or not staff_documents_uplo
     st.info("Please upload both CSV files")
 elif check_files_button:
     processor = StaffDocumentProcessor(
-        reference_doc= "staff_references.csv",
-        files_doc="staff_documents.csv"
+        reference_doc= reference_file_upload.name,
+        files_doc=staff_documents_upload.name
     )
 
     result_df =  processor.get_results()
