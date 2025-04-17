@@ -3,118 +3,79 @@ import pandas as pd
 
 from constants import REQUIRED_FILES
 
-class StaffDocumentPrepocessor:
-    def __init__(self, reference_doc):
-        self.reference_doc_df = pd.read_csv(reference_doc, header=None)
-        self.staff_details = self.get_staff_details()
 
-    def get_staff_names(self):
-        first_names = self.reference_doc_df.iloc[1]
-        last_names = self.reference_doc_df.iloc[0]
-        return [
-            f"{first_name.strip()} {last_name.strip()}" 
-            for first_name, last_name in zip(first_names, last_names)
-        ]
+class StaffDocumentProcessor():
+    def __init__(self, staff_reference, all_docs):
+        self.reference_df = pd.read_csv(staff_reference, skiprows=2, header=None)
+        self.docs_df = pd.read_csv(all_docs, skiprows=1, encoding_errors="ignore")
+        self.staff_col = 'Client Surname'
+        self.doc_col = 'Document Name'
 
-    def get_job_positions(self):
-        file_type_column = self.reference_doc_df.iloc[:, 0].astype(str).str.strip().str.lower()
-        print(f'file_types: {file_type_column}')
-        job_position_index = file_type_column[file_type_column == 'Position'].index
-        assert not job_position_index.empty
-        job_position_index = job_position_index[0]
-        assert job_position_index
-        positions = self.reference_doc_df.iloc[1:, job_position_index]
-
-        def allocation(p):
-            position = 'ot'
-            if 'speech' in p: position = 'speech'
-            elif 'admin' in p: position = 'admin'
-            return position
-
-        positions = [allocation(p.lower()) for p in positions]
-        print(f'positions: {positions}')
-        return positions
-
-    def get_staff_details(self):
-        staff_names = self.get_staff_names()
-        job_positions = self.get_job_positions()
-        print(f'staff_names: {staff_names}\njob_positions: {job_positions}')
-        return dict(zip(staff_names, job_positions))
-
-
-class StaffDocumentProcessor(StaffDocumentPrepocessor):
-    def __init__(self, reference_doc, files_doc):
-        super().__init__(reference_doc)
-        self.fullname_header = "Full Name"
-        self.document_header = "Document Name"
-        self.df = pd.read_csv(files_doc, skiprows=1)
-
-    def create_fullname_column(self):
-        self.df[self.fullname_header] = (
-            self.df["Client Firstname"].str.strip() 
-            + " " 
-            + self.df["Client Surname"].str.strip()
-        )
-        return self
-
-    def filter_for_staff_personel(self):
-        staff_names = set(self.staff_details.keys())
-        self.df = self.df[self.df[self.fullname_header].isin(staff_names)]
-        return self
-
-    def filter_for_required_files(self):
-        allowed = set(self.required_files["all_staff"] + sum(self.required_files.values(), []))
-        self.df = self.df[self.df[self.document_header].isin(allowed)]
-        return self
-
-    def parse_file_names(self):
-        self.df[["file_name", "file_date"]] = self.df[self.document_header].str.extract(
-            r"^(.*)_(\d{2}-\d{2}-\d{4})$"
-        )
-        self.df = self.df.dropna(subset=["file_name", "file_date"])
-        self.df["file_date"] = pd.to_datetime(
-            self.df["file_date"], format="%d-%m-%Y", errors="coerce"
-        )
-        self.df = self.df.dropna(subset=["file_date"])
-        return self
+    def mask_na_files(self, file_column):
+        staff_role = self.staff_roles[file_column.name]
+        required_files = REQUIRED_FILES['all_staff'] + REQUIRED_FILES[staff_role]
+        return {
+            file: 'N/A' if file not in required_files else file_column[file]
+            for file in file_column.index
+        }
     
-    def check_staff_documents(self):
-        df = self.df
-        today = pd.Timestamp.today()
-        results = []
+    def set_relevant_docs(self):
+        required_files = '|'.join(REQUIRED_FILES.values())
+        staff_members = '|'.join(self.reference_df.iloc[1])
+        filtered_files = self.docs_df[self.doc_col].str.contains(
+            required_files, case=False, na=False
+        )
+        filtered_staff = self.docs_df[self.staff_col].str.contains(
+            staff_members, case=False, na=False
+        )
+        self.docs_df = self.docs_df[filtered_files & filtered_staff]
+        return self
 
-        for user in df[self.fullname_header].unique():
-            print(f'user: {user}')
-            print(f'user_row? : {df[self.fullname_header] == user}')
-            print(f'user_df: {df[df[self.fullname_header] == user]}')
-            user_df = df[df[self.fullname_header] == user]
-            user_files = set(user_df["file_name"])
+    def set_staff_roles(self):
+        def format_role(r):
+            role = 'ot'
+            if 'speech' in r: role = 'speech'
+            elif 'admin' in r or 'reception' in r: role = 'admin'
+            return role
+        self.reference_df = self.reference_df.set_index(0)
+        staff = list(self.reference_df.loc['Surname'])
+        roles = self.reference_df.loc['Position'].ffill().tolist()[1:]
+        formatted_roles = [format_role(role.lower()) for role in roles]
+        self.staff_roles = dict(zip(staff, formatted_roles))
+        return self
 
-            users_required_files = (
-                REQUIRED_FILES["all_staff"] + REQUIRED_FILES[self.staff_details[user]]
-            )
-            print(f'users_required_files: {users_required_files}')
+    def create_results_df(self):
+        full_names = self.reference_df.iloc[0] + self.reference_df.iloc[1]
+        self.results_df =  pd.DataFrame(columns=full_names)
+        file_column_header = 'Files (based on keywords)'
+        self.results_df[file_column_header] = list(REQUIRED_FILES.values())
+        self.results_df.set_index(file_column_header, inplace=True)
+        return self
+
+    def fill_cells(self):
+        for _, row in self.docs_df.iterrows():
+            staff_name = f'{row['Client Firstname']} {row[self.staff_col]}'
+            doc_name = row[self.doc_col].lower()
+            for required_file in self.results_df.index:
+                if required_file.lower() in doc_name:
+                    try:
+                        _, expiry = doc_name.split('_')
+                    except ValueError:
+                        expiry = None
+                    today = pd.Timestamp.today() + pd.DateOffset(days=1)
+                    in_one_month = pd.Timestamp.today + pd.DateOffset(months=1)
+                    status = 'Yes'
+                    if not expiry or expiry < today:
+                        status = 'Expired'
+                    elif expiry < in_one_month :
+                        status = 'Expiring'
+                    self.results_df.at[required_file, staff_name] = status
+        return self.results_df.apply(self.mask_na_files).fillna("Missing").replace("Yes", "")
             
-            row = { "Staff": user }
-            missing_files = users_required_files - user_files
-            for file in missing_files:
-                row["FileName"] = file
-                row["Status"] = "missing"
-                results.append(row)
-
-            for _, file_row in user_df.iterrows():
-                if file_row["file_date"] < today: 
-                    row["FileName"] = file_row["file_name"]
-                    row["Status"] = "expired"
-                    results.append(row)
-
-        return results
-    
-    def get_results(self):
-        return (
-            self.create_fullname_column()
-            .filter_for_staff_personel()
-            .filter_for_required_files()
-            .parse_file_names()
-            .check_staff_documents()
+    def get_results(self):   
+        return ( 
+            self.set_relevant_docs()
+                .set_staff_roles()
+                .create_results_df()
+                .fill_cells()
         )

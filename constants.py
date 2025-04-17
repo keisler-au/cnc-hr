@@ -2,9 +2,9 @@ REQUIRED_FILES = {
  "all_staff": [
     'position',
     'orientation-checklist',
-    'acknowledgement-form',
+    'acknowledgement-form.pdf',
     'orientation-module',
-    'drivers-licence',
+    'drivers-licence.pdf',
     'wwc',
     'police-clearance',
     'ndis-screening',

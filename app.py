@@ -2,26 +2,21 @@ import streamlit as st
 
 from processor import StaffDocumentProcessor
 
-# change mine and kates documents in the downloaded echidna .csv
-# upload to stream lit
-# give it a crack
 
-st.title("Staff File Checker")
-reference_file_upload = st.file_uploader("Upload staff reference file | .csv", type="csv")
-staff_documents_upload = st.file_uploader("Upload staff documents file | .csv", type="csv")
-check_files_button = st.button("Check files")
+st.title("HR File Scanner")
+staff_reference_file = st.file_uploader("Upload staff reference file | .csv", type="csv")
+all_documents_file = st.file_uploader("Upload staff documents file | .csv", type="csv")
+scan_button = st.button("Scan files")
 
-if check_files_button and (not reference_file_upload or not staff_documents_upload):
+if scan_button and (not staff_reference_file or not all_documents_file):
     st.info("Please upload both CSV files")
-elif check_files_button:
+elif scan_button:
     processor = StaffDocumentProcessor(
-        reference_doc= reference_file_upload.name,
-        files_doc=staff_documents_upload.name
+        staff_reference=staff_reference_file,
+        all_docs=all_documents_file
     )
-
     result_df =  processor.get_results()
     
-
     st.write("Results:")
     st.dataframe(result_df)
 
